@@ -4,25 +4,28 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 var ErrPoolClosed = errors.New("ErrPoolClosed")
 
 type Pool[T any] struct {
-	lock       sync.Mutex
-	free       []T
-	closed     bool
-	wakeSignal chan struct{}
+	lock   sync.Mutex
+	free   chan T
+	closed atomic.Bool
 }
 
 // New creates a pool pre-filled with the given items.
 func New[T any](items []T) *Pool[T] {
-	return &Pool[T]{
-		lock:       sync.Mutex{},
-		free:       items,
-		closed:     false,
-		wakeSignal: make(chan struct{}),
+	p := &Pool[T]{
+		free:   make(chan T, len(items)),
+		closed: atomic.Bool{},
 	}
+	p.closed.Store(false)
+	for _, item := range items {
+		p.free <- item
+	}
+	return p
 }
 
 // Acquire blocks until an item is free, then leases and returns it.
@@ -31,62 +34,39 @@ func New[T any](items []T) *Pool[T] {
 func (p *Pool[T]) Acquire(ctx context.Context) (T, error) {
 	var zero T
 
-	if p.closed {
-		return zero, ErrPoolClosed
-	}
-
 	for {
-		if p.closed {
+		if p.closed.Load() {
 			return zero, ErrPoolClosed
 		}
 
-		p.lock.Lock()
-		if len(p.free) > 0 {
-			item := p.free[0]
-			p.free = p.free[1:]
-			p.lock.Unlock()
-			return item, nil
-		}
-		p.lock.Unlock()
-
 		select {
 		case <-ctx.Done():
-			//p.lock.Unlock()
 			return zero, ctx.Err()
-		case <-p.wakeSignal:
-
+		case item := <-p.free:
+			if p.closed.Load() {
+				return zero, ErrPoolClosed
+			}
+			return item, nil
 		}
 	}
+
 }
 
 // Release returns a previously-acquired item to the pool.
 func (p *Pool[T]) Release(item T) {
-	if p.closed {
+	if p.closed.Load() {
 		return
 	}
 
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
 	// the requirements don't say anything about T being "comparable"
 	// hence I can't search and release "that exact" item which was acquired,
-	// so I use append
-	p.free = append(p.free, item)
-
-	// this will release others to acquire
-	close(p.wakeSignal)
-
-	// recreate wakeSignal channel
-	p.wakeSignal = make(chan struct{})
+	// so I assume caller will always stick to the contract and only send item T
+	// where item belongs to initial set of items
+	p.free <- item
 }
 
 // Close makes the pool reject further Acquire calls and unblocks any waiters.
 func (p *Pool[T]) Close() {
-	p.closed = true
-
-	// this will release others to acquire
-	close(p.wakeSignal)
-
-	// recreate wakeSignal channel
-	p.wakeSignal = make(chan struct{})
+	p.closed.Store(true)
+	close(p.free)
 }
