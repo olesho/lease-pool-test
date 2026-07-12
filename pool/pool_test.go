@@ -215,3 +215,64 @@ func TestPool_AtMostNItemsLeased(t *testing.T) {
 	}
 
 }
+
+// This test detects the unsynchronized accesses to p.closed when run with
+// the race detector:
+//
+//	go test -race -run TestPool_CloseConcurrentWithAcquireAndRelease -count=10
+func TestPool_CloseConcurrentWithAcquireAndRelease(t *testing.T) {
+	const (
+		rounds  = 50
+		workers = 12
+		ops     = 500
+	)
+
+	for round := 0; round < rounds; round++ {
+		p := New([]int{1, 2, 3, 4})
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(workers + 1)
+
+		for worker := 0; worker < workers; worker++ {
+			go func(worker int) {
+				defer wg.Done()
+				<-start
+
+				for i := 0; i < ops; i++ {
+					if worker%2 == 0 {
+						// A cancelled context makes each Acquire return
+						// promptly while still exercising the closed check.
+						ctx, cancel := context.WithCancel(
+							context.Background(),
+						)
+						cancel()
+
+						_, _ = p.Acquire(ctx)
+					} else {
+						p.Release(i)
+					}
+				}
+			}(worker)
+		}
+
+		go func() {
+			defer wg.Done()
+			<-start
+			p.Close()
+		}()
+
+		close(start)
+		wg.Wait()
+	}
+}
+
+func TestPool_CloseIsIdempotent(t *testing.T) {
+	p := New([]int{1})
+
+	p.Close()
+
+	// A channel-based implementation must protect against closing its
+	// notification channel twice.
+	p.Close()
+}
