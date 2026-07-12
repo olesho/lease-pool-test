@@ -3,7 +3,9 @@ package pool
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -157,4 +159,44 @@ func TestPool_Close(t *testing.T) {
 	if testItem != "" {
 		t.Errorf("got %q, want '' due to p.Close()", testItem)
 	}
+}
+
+func TestPool_AtMostNItemsLeased(t *testing.T) {
+	const nItems = 4
+	const nWorkers = 150
+
+	items := make([]string, nItems)
+	for i := 0; i < nItems; i++ {
+		items[i] = fmt.Sprint(i)
+	}
+
+	var counter atomic.Int32
+	p := New(items)
+	wg := sync.WaitGroup{}
+	wg.Add(nWorkers)
+	for i := 0; i < nWorkers; i++ {
+		go func() {
+			defer wg.Done()
+
+			item, err := p.Acquire(context.Background())
+			if err != nil {
+				t.Errorf("got %v, want nil", err)
+			}
+			if item == "" {
+				t.Errorf("got %q, want non-empty string", item)
+			}
+
+			counter.Add(1)
+			time.Sleep(100 * time.Millisecond)
+
+			if counter.Load() > nItems {
+				t.Errorf("got %d, want %d", counter.Load(), nItems)
+			}
+
+			counter.Add(-1)
+			p.Release(item)
+		}()
+	}
+
+	wg.Wait()
 }

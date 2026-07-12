@@ -46,13 +46,16 @@ func (p *Pool[T]) Acquire(ctx context.Context) (T, error) {
 
 // Release returns a previously-acquired item to the pool.
 func (p *Pool[T]) Release(item T) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
 	if p.closed {
 		return
 	}
 
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	// the requirements don't say anything about T being "comparable"
+	// hence I can't search and release "that exact" item which was acquired,
+	// so I use append
 	p.free = append(p.free, item)
 }
 
