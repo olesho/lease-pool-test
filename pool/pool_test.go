@@ -143,4 +143,18 @@ func TestPool_Close(t *testing.T) {
 
 	// should be rejected
 	p.Release(item1)
+
+	if len(p.free) > 0 {
+		t.Errorf("len(p.free) = %d, want 0", len(p.free))
+	}
+
+	// should be rejected
+	testItem, err := p.Acquire(context.Background())
+	if !errors.Is(err, ErrPoolClosed) {
+		t.Errorf("got %v, want nil", err)
+	}
+
+	if testItem != "" {
+		t.Errorf("got %q, want '' due to p.Close()", testItem)
+	}
 }

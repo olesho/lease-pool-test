@@ -49,6 +49,10 @@ func (p *Pool[T]) Release(item T) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	if p.closed {
+		return
+	}
+
 	p.free = append(p.free, item)
 }
 
