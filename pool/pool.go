@@ -58,6 +58,7 @@ func (p *Pool[T]) Close() {
 }
 
 func (p *Pool[T]) tryEvict() (T, bool) {
+	// this should work but might be inefficient
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
