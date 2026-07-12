@@ -135,6 +135,7 @@ func TestPool_Close(t *testing.T) {
 		result <- item
 	}()
 
+	time.Sleep(100 * time.Millisecond)
 	p.Close()
 
 	// should unblock

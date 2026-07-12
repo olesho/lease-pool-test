@@ -82,4 +82,5 @@ func (p *Pool[T]) Release(item T) {
 // Close makes the pool reject further Acquire calls and unblocks any waiters.
 func (p *Pool[T]) Close() {
 	p.closed = true
+	close(p.wakeSignal)
 }
