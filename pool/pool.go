@@ -51,6 +51,7 @@ func (p *Pool[T]) Acquire(ctx context.Context) (T, error) {
 
 		select {
 		case <-ctx.Done():
+			//p.lock.Unlock()
 			return zero, ctx.Err()
 		case <-p.wakeSignal:
 
@@ -82,5 +83,10 @@ func (p *Pool[T]) Release(item T) {
 // Close makes the pool reject further Acquire calls and unblocks any waiters.
 func (p *Pool[T]) Close() {
 	p.closed = true
+
+	// this will release others to acquire
 	close(p.wakeSignal)
+
+	// recreate wakeSignal channel
+	p.wakeSignal = make(chan struct{})
 }
