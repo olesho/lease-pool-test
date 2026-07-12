@@ -174,9 +174,14 @@ func TestPool_AtMostNItemsLeased(t *testing.T) {
 	p := New(items)
 	wg := sync.WaitGroup{}
 	wg.Add(nWorkers)
+
+	startWhistle := make(chan struct{})
+	errs := make(chan error, nItems)
+
 	for i := 0; i < nWorkers; i++ {
 		go func() {
 			defer wg.Done()
+			<-startWhistle
 
 			item, err := p.Acquire(context.Background())
 			if err != nil {
@@ -190,7 +195,7 @@ func TestPool_AtMostNItemsLeased(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			if counter.Load() > nItems {
-				t.Errorf("got %d, want %d", counter.Load(), nItems)
+				errs <- fmt.Errorf("got %d, want %d", counter.Load(), nItems)
 			}
 
 			counter.Add(-1)
@@ -198,5 +203,14 @@ func TestPool_AtMostNItemsLeased(t *testing.T) {
 		}()
 	}
 
+	// let them start simulaneously
+	close(startWhistle)
+
 	wg.Wait()
+	close(errs)
+
+	for e := range errs {
+		t.Errorf("got %v, want nil", e)
+	}
+
 }
