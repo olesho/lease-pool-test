@@ -203,7 +203,7 @@ func TestPool_AtMostNItemsLeased(t *testing.T) {
 		}()
 	}
 
-	// let them start simulaneously
+	// let them start simultaneously
 	close(startWhistle)
 
 	wg.Wait()
